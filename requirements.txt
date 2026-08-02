@@ -1,6 +1,5 @@
-fastapi
-uvicorn
+streamlit
 tensorflow==2.21.0
 numpy
 pillow
-python-multipart
+scikit-learn

@@ -13,7 +13,7 @@ st.write("Upload an image of the road to detect damages via FastAPI Backend.")
 
 # 🔴 APNE LIVE DEPLOYED BACKEND KA URL YAHAN DALEIN 🔴
 # Localhost internet par kaam nahi karega, live https link hona zaroori hai.
-BACKEND_URL = "https://your-deployed-fastapi-url.com"
+BACKEND_URL = "ai-road-damage-detection-production.up.railway.app"
 
 # =====================================================
 # FRONTEND INTERFACE & API CALL

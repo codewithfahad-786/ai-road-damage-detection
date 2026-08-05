@@ -2,7 +2,11 @@ import streamlit as st
 import requests
 from PIL import Image
 
-API_URL = "https://ai-road-damage-detection-production.up.railway.app"
+# ==============================
+
+# Page Configuration
+
+# ==============================
 
 st.set_page_config(
 page_title="AI Road Damage Detection",
@@ -10,15 +14,41 @@ page_icon="🛣️",
 layout="centered"
 )
 
+# ==============================
+
+# Railway Backend URL
+
+# ==============================
+
+BACKEND_URL = "https://ai-road-damage-detection-production.up.railway.app"
+
+# ==============================
+
+# Title
+
+# ==============================
+
 st.title("🛣️ AI Road Damage Detection")
-st.write("Upload a road image to detect road damage type and severity.")
+st.write("Upload a road image to detect road damage and its severity.")
 
 st.divider()
+
+# ==============================
+
+# Image Upload
+
+# ==============================
 
 uploaded_file = st.file_uploader(
 "Upload Road Image",
 type=["jpg", "jpeg", "png"]
 )
+
+# ==============================
+
+# Prediction
+
+# ==============================
 
 if uploaded_file is not None:
 
@@ -36,6 +66,8 @@ if st.button("🔍 Detect Road Damage"):
     with st.spinner("Analyzing image..."):
 
         try:
+            # Reset file position
+            uploaded_file.seek(0)
 
             files = {
                 "file": (
@@ -45,12 +77,14 @@ if st.button("🔍 Detect Road Damage"):
                 )
             }
 
+            # Send image to Railway FastAPI backend
             response = requests.post(
-                API_URL + "/predict",
+                f"{BACKEND_URL}/predict",
                 files=files,
                 timeout=120
             )
 
+            # Check response
             if response.status_code == 200:
 
                 result = response.json()
@@ -65,17 +99,17 @@ if st.button("🔍 Detect Road Damage"):
                     0
                 )
 
-                severity_info = result.get(
+                severity_data = result.get(
                     "severity",
                     {}
                 )
 
-                severity = severity_info.get(
+                severity = severity_data.get(
                     "severity",
                     "Unknown"
                 )
 
-                recommendation = severity_info.get(
+                recommendation = severity_data.get(
                     "recommendation",
                     "No recommendation available"
                 )
@@ -85,9 +119,13 @@ if st.button("🔍 Detect Road Damage"):
                     {}
                 )
 
-                st.success("Prediction completed successfully!")
+                # ==============================
+                # Results
+                # ==============================
 
-                st.subheader("Detection Result")
+                st.success("✅ Prediction completed!")
+
+                st.subheader("📊 Detection Result")
 
                 col1, col2 = st.columns(2)
 
@@ -100,62 +138,75 @@ if st.button("🔍 Detect Road Damage"):
                 with col2:
                     st.metric(
                         "Confidence",
-                        f"{float(confidence):.2f}%"
+                        f"{confidence:.2f}%"
                     )
 
-                st.subheader("Severity")
+                st.subheader("⚠️ Severity")
 
-                st.write(
-                    "Severity: " + str(severity)
+                st.info(
+                    f"**Severity:** {severity}"
                 )
 
-                st.write(
-                    "Recommendation: " + str(recommendation)
+                st.warning(
+                    f"**Recommendation:** {recommendation}"
                 )
 
-                st.subheader("Class Probabilities")
+                # ==============================
+                # Probabilities
+                # ==============================
 
-                for class_name, probability in probabilities.items():
+                if probabilities:
 
-                    probability = float(probability)
-
-                    st.write(
-                        f"{class_name}: {probability:.2f}%"
+                    st.subheader(
+                        "📈 Class Probabilities"
                     )
 
-                    st.progress(
-                        min(max(probability / 100, 0.0), 1.0)
-                    )
+                    for class_name, probability in probabilities.items():
+
+                        st.write(
+                            f"**{class_name}:** "
+                            f"{probability:.2f}%"
+                        )
+
+                        st.progress(
+                            min(
+                                int(round(float(probability))),
+                                100
+                            )
+                        )
 
             else:
 
                 st.error(
-                    f"Backend returned error: {response.status_code}"
+                    f"Backend Error: "
+                    f"{response.status_code}"
                 )
 
-                st.code(response.text)
+                st.code(
+                    response.text
+                )
 
         except requests.exceptions.Timeout:
 
             st.error(
-                "Backend request timed out. Please try again."
+                "⏱️ Backend request timed out. "
+                "Please try again."
             )
 
         except requests.exceptions.ConnectionError:
 
             st.error(
-                "Could not connect to Railway backend."
+                "❌ Could not connect to Railway backend. "
+                "Please check that the Railway service is running."
             )
 
         except Exception as e:
 
             st.error(
-                f"Unexpected error: {str(e)}"
+                "❌ Something went wrong."
+            )
+
+            st.code(
+                str(e)
             )
 ```
-
-st.divider()
-
-st.caption(
-"AI-Based Smart Road Damage Detection & Severity Assessment System"
-)

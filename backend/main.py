@@ -25,7 +25,8 @@ app.add_middleware(
 # FILE PATHS                                            #
 # ===================================================== #
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "road_damage_model.keras")
+# NAAM CHANGE: road_damage_model.keras ko road_model.keras kar diya gaya hai
+MODEL_PATH = os.path.join(BASE_DIR, "road_model.keras")
 CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
 SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
 

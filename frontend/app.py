@@ -12,7 +12,7 @@ st.write("Upload a road image to detect damages and assess severity.")
 # "http://127.0.0" sirf aapke computer (localhost) par kaam karega.
 # Jab aap frontend Streamlit Cloud par deploy karte hain, to backend (FastAPI) ko 
 # Render.com ya Hugging Face par deploy karke uska public URL yahan lagana lazmi hai.
-BACKEND_URL = "http://127.0.0" 
+BACKEND_URL = "https://railway.app" 
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 

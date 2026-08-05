@@ -1,82 +1,138 @@
-import streamlit as st
-import requests
+import os
+# Must be set BEFORE importing tensorflow to successfully block logs
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
 
-# =====================================================
-# PAGE SETUP
-# =====================================================
-st.set_page_config(
-    page_title="AI Road Damage Detection", 
-    page_icon="🚧", 
-    layout="centered"
+import io
+import json
+from PIL import Image
+import numpy as np
+import tensorflow as tf
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+# Suppress additional Keras output flags
+tf.get_logger().setLevel('ERROR')
+
+app = FastAPI(
+    title="AI Road Damage Detection API",
+    description="CNN Based Road Damage Detection and Severity Assessment",
+    version="1.0"
 )
 
-st.title("🚧 AI Road Damage Detection & Severity Assessment")
-st.write("Upload an image of the road to detect damages via AI Backend.")
-
-# =====================================================
-# LIVE RAILWAY BACKEND CONFIGURATION
-# =====================================================
-BACKEND_URL = "https://railway.app"
-
-# =====================================================
-# FRONTEND INTERFACE & API CALL
-# =====================================================
-uploaded_file = st.file_uploader(
-    "Choose a road image...", type=["jpg", "jpeg", "png"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-if uploaded_file is not None:
-    st.image(uploaded_file, caption="Uploaded Road Image", use_container_width=True)
+# ===================================================== #
+# FILE PATHS                                            #
+# ===================================================== #
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "road_damage_model.keras")
+CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
+SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
 
-    if st.button("Run Damage Analysis", type="primary"):
-        with st.spinner("Sending image to AI Backend server..."):
-            try:
-                # Prepare payload
-                files = {
-                    "file": (
-                        uploaded_file.name,
-                        uploaded_file.getvalue(),
-                        uploaded_file.type,
-                    )
-                }
+# ===================================================== #
+# CHECK FILES                                           #
+# ===================================================== #
+if not os.path.isfile(MODEL_PATH):
+    raise FileNotFoundError("Model file not found: " + MODEL_PATH)
 
-                # POST request to Railway
-                response = requests.post(BACKEND_URL, files=files)
+if not os.path.isfile(CLASS_LABELS_PATH):
+    raise FileNotFoundError("Class labels file not found: " + CLASS_LABELS_PATH)
 
-                # Checking Content-Type safely before decoding JSON
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        
-                        damage_type = result.get("damage_type", "Unknown")
-                        severity = result.get("severity", "Unknown")
-                        confidence = result.get("confidence", 0.0)
-                        probabilities = result.get("probabilities", {})
+if not os.path.isfile(SEVERITY_MAPPING_PATH):
+    raise FileNotFoundError("Severity mapping file not found: " + SEVERITY_MAPPING_PATH)
 
-                        st.success("Analysis Complete successfully!")
+# ===================================================== #
+# LOAD MODEL & CONFIGS                                  #
+# ===================================================== #
+model = tf.keras.models.load_model(MODEL_PATH, compile=False)
 
-                        # Metrics Display Layout
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric(label="Damage Type", value=damage_type)
-                        col2.metric(label="Severity Level", value=severity)
-                        col3.metric(label="Confidence", value=f"{confidence}%")
+with open(CLASS_LABELS_PATH, "r", encoding="utf-8") as f:
+    class_labels = json.load(f)
 
-                        if probabilities:
-                            st.write("### 📊 Distribution Probabilities")
-                            for name, percentage in probabilities.items():
-                                st.write(f"**{name}**")
-                                st.progress(percentage / 100)
-                                st.caption(f"{percentage}%")
-                                
-                    except ValueError:
-                        st.error("🔴 Backend returned 200 OK, but output was not valid JSON.")
-                        st.warning("👇 Check the raw text response below to find the bug:")
-                        st.text_area("Raw Server Text Response:", value=response.text, height=300)
-                else:
-                    st.error(f"🔴 Backend Error! HTTP Status Code: {response.status_code}")
-                    st.text_area("Server Error Response Logs:", value=response.text, height=300)
+if isinstance(class_labels, list):
+    class_labels = {i: name for i, name in enumerate(class_labels)}
+elif isinstance(class_labels, dict):
+    class_labels = {int(key): value for key, value in class_labels.items()}
 
-            except requests.exceptions.ConnectionError:
-                st.error("Could not connect to Railway server. Please check if your backend is live.")
-            except Exception as e:
-                st.error(f"Pipeline processing failed: {str(e)}")
+with open(SEVERITY_MAPPING_PATH, "r", encoding="utf-8") as f:
+    severity_mapping = json.load(f)
+
+# ===================================================== #
+# IMAGE PREPROCESSING                                   #
+# ===================================================== #
+IMG_SIZE = 224
+
+def preprocess_image(image):
+    image = image.convert("RGB")
+    image = image.resize((IMG_SIZE, IMG_SIZE))
+    image = np.array(image, dtype=np.float32)
+    image = tf.keras.applications.efficientnet.preprocess_input(image)
+    image = np.expand_dims(image, axis=0)
+    return image
+
+# ===================================================== #
+# ENDPOINTS                                             #
+# ===================================================== #
+@app.get("/")
+def home():
+    return {
+        "message": "AI Road Damage Detection API Running",
+        "status": "success",
+        "model_loaded": True
+    }
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy",
+        "model_loaded": model is not None
+    }
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    if not file.content_type:
+        raise HTTPException(status_code=400, detail="File type is missing.")
+
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload a valid image.")
+
+    try:
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        image = Image.open(io.BytesIO(contents))
+        processed_image = preprocess_image(image)
+        
+        # Get raw prediction and flatten to a reliable 1D array
+        raw_prediction = model.predict(processed_image, verbose=0)
+        prediction_vector = raw_prediction[0].tolist()  # Converts directly to standard Python floats
+        
+        predicted_index = int(np.argmax(prediction_vector))
+        confidence = float(prediction_vector[predicted_index])
+        
+        damage_type = class_labels.get(predicted_index, "Unknown")
+        severity = severity_mapping.get(damage_type, "Unknown")
+        
+        probabilities = {}
+        for index, name in class_labels.items():
+            if index < len(prediction_vector):
+                probabilities[name] = round(float(prediction_vector[index]) * 100, 2)
+                
+        return {
+            "damage_type": damage_type,
+            "severity": severity,
+            "confidence": round(confidence * 100, 2),
+            "probabilities": probabilities
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Prediction failed: " + str(e))

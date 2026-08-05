@@ -86,7 +86,6 @@ def preprocess_image(image):
     image = image.convert("RGB")
     image = image.resize((IMG_SIZE, IMG_SIZE))
     image = np.array(image, dtype=np.float32)
-    # EfficientNet ka sahi preprocessing method call karein
     image = tf.keras.applications.efficientnet.preprocess_input(image)
     image = np.expand_dims(image, axis=0)
     return image
@@ -159,3 +158,4 @@ async def predict(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail="Prediction failed: " + str(e)
+        )

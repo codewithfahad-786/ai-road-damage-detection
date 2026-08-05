@@ -1,20 +1,19 @@
 import streamlit as st
 import requests
 
-# Aapka asli live Railway API link yahan bilkul sahi set hai
+# Aapka asli live Railway API link
 API_URL = "https://railway.app"
 
 st.set_page_config(page_title="AI Road Damage Detection", layout="centered")
 
 st.title("🛣 AI Road Damage Detection System")
-st.write("Upload a road image to detect structural damage and access severity.")
+st.write("Upload a road image to detect structural damage and assess severity.")
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # FIX: use_column_width ko use_container_width se replace kar diya hai
-   st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
-
+    # Streamlit 1.35.0 ke liye use_column_width=True bilkul sahi hai
+    st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
     
     if st.button("Analyze Road Damage"):
         with st.spinner("Analyzing image through CNN model... Please wait."):

@@ -1,2 +1,3 @@
 road_damage_model.keras filter=lfs diff=lfs merge=lfs -text
 Backend/road_damage_model.keras filter=lfs diff=lfs merge=lfs -text
+*.keras filter=lfs diff=lfs merge=lfs -text

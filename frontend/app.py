@@ -43,6 +43,7 @@ if uploaded_file is not None:
                 # POST request to Railway
                 response = requests.post(BACKEND_URL, files=files)
 
+                # Checking Content-Type safely before decoding JSON
                 if response.status_code == 200:
                     try:
                         result = response.json()
@@ -54,7 +55,7 @@ if uploaded_file is not None:
 
                         st.success("Analysis Complete successfully!")
 
-                        # Metrics Display
+                        # Metrics Display Layout
                         col1, col2, col3 = st.columns(3)
                         col1.metric(label="Damage Type", value=damage_type)
                         col2.metric(label="Severity Level", value=severity)
@@ -68,13 +69,14 @@ if uploaded_file is not None:
                                 st.caption(f"{percentage}%")
                                 
                     except ValueError:
-                        st.error("🔴 Backend returned a 200 OK success status, but the content wasn't valid JSON text.")
-                        st.text_area("Raw Server Output Data:", value=response.text, height=250)
+                        st.error("🔴 Backend returned 200 OK, but output was not valid JSON.")
+                        st.warning("👇 Check the raw text response below to find the bug:")
+                        st.text_area("Raw Server Text Response:", value=response.text, height=300)
                 else:
-                    st.error(f"🔴 Backend Error (Status Code: {response.status_code})")
-                    st.text_area("Server Raw Response Logs:", value=response.text, height=250)
+                    st.error(f"🔴 Backend Error! HTTP Status Code: {response.status_code}")
+                    st.text_area("Server Error Response Logs:", value=response.text, height=300)
 
             except requests.exceptions.ConnectionError:
-                st.error("Could not connect to Railway server. Please wait a moment.")
+                st.error("Could not connect to Railway server. Please check if your backend is live.")
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Pipeline processing failed: {str(e)}")

@@ -19,25 +19,21 @@ st.write("Upload an image of the road to detect damages and evaluate severity.")
 # SAFE RESOLVING FILE PATHS
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Finding path variables dynamically from root or backend directory
 ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
 
-# Checking fallback paths for Streamlit Cloud deployment architecture
 if os.path.exists(BACKEND_DIR):
     MODEL_PATH = os.path.join(BACKEND_DIR, "road_model.keras")
     CLASS_LABELS_PATH = os.path.join(BACKEND_DIR, "class_labels.json")
     SEVERITY_MAPPING_PATH = os.path.join(BACKEND_DIR, "severity_mapping.json")
 else:
-    # If files are in the same folder as app.py
     MODEL_PATH = os.path.join(BASE_DIR, "road_model.keras")
     CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
     SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
 
 
 # =====================================================
-# CACHED LOADING (Prevents App Reloading Delay)
+# CACHED LOADING
 # =====================================================
 @st.cache_resource
 def load_ai_model():
@@ -69,7 +65,6 @@ def load_configs():
     return labels, severity
 
 
-# Load core framework data structures
 model = load_ai_model()
 class_labels, severity_mapping = load_configs()
 
@@ -83,7 +78,6 @@ def preprocess_image(image):
     image = image.convert("RGB")
     image = image.resize((IMG_SIZE, IMG_SIZE))
     image = np.array(image, dtype=np.float32)
-    # Scaled standard input normalizer for EfficientNet
     image = tf.keras.applications.efficientnet.preprocess_input(image)
     image = np.expand_dims(image, axis=0)
     return image
@@ -107,24 +101,34 @@ if uploaded_file is not None:
             with st.spinner("Analyzing road conditions..."):
                 try:
                     processed_image = preprocess_image(image)
-
-                    # Model prediction lookup operation
                     prediction = model.predict(processed_image, verbose=0)
-                    prediction_scores = prediction[0]
+                    prediction_scores = prediction[0]  # Extracting 1D array score
 
                     predicted_index = int(np.argmax(prediction_scores))
                     confidence = float(np.max(prediction_scores))
 
                     damage_type = class_labels.get(predicted_index, "Unknown")
-                    severity = severity_mapping.get(damage_type, "Low/Unknown")
+                    
+                    # 🔴 FIXED HERE: Handling dictionary structure safely 🔴
+                    severity_data = severity_mapping.get(damage_type, "Low/Unknown")
+                    
+                    if isinstance(severity_data, dict):
+                        severity = severity_data.get("severity", "Low/Unknown")
+                        recommendation = severity_data.get("recommendation", "No data available")
+                    else:
+                        severity = severity_data
+                        recommendation = "No data available"
 
                     st.success("Analysis Complete successfully!")
 
-                    # Metrics view layout split
+                    # Metrics UI display layout split
                     col1, col2, col3 = st.columns(3)
                     col1.metric(label="Damage Type", value=damage_type)
                     col2.metric(label="Severity Level", value=severity)
                     col3.metric(label="Confidence", value=f"{round(confidence * 100, 2)}%")
+
+                    # Display Recommendation underneath metrics
+                    st.info(f"📋 **Action Recommendation:** {recommendation}")
 
                     # Individual breakdown metrics overview graph layout
                     st.write("### 📊 Distribution Probabilities")

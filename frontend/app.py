@@ -1,9 +1,5 @@
-import json
-import os
-import numpy as np
-from PIL import Image
 import streamlit as st
-import tensorflow as tf
+import requests
 
 # =====================================================
 # PAGE SETUP
@@ -13,131 +9,73 @@ st.set_page_config(
 )
 
 st.title("🚧 AI Road Damage Detection & Severity Assessment")
-st.write("Upload an image of the road to detect damages and evaluate severity.")
+st.write("Upload an image of the road to detect damages via FastAPI Backend.")
+
+# 🔴 APNE LIVE DEPLOYED BACKEND KA URL YAHAN DALEIN 🔴
+# Localhost internet par kaam nahi karega, live https link hona zaroori hai.
+BACKEND_URL = "https://your-deployed-fastapi-url.com"
 
 # =====================================================
-# SAFE RESOLVING FILE PATHS
-# =====================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
-BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
-
-if os.path.exists(BACKEND_DIR):
-    MODEL_PATH = os.path.join(BACKEND_DIR, "road_model.keras")
-    CLASS_LABELS_PATH = os.path.join(BACKEND_DIR, "class_labels.json")
-    SEVERITY_MAPPING_PATH = os.path.join(BACKEND_DIR, "severity_mapping.json")
-else:
-    MODEL_PATH = os.path.join(BASE_DIR, "road_model.keras")
-    CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
-    SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
-
-
-# =====================================================
-# CACHED LOADING
-# =====================================================
-@st.cache_resource
-def load_ai_model():
-    if not os.path.isfile(MODEL_PATH):
-        st.error(f"Model file missing at: {MODEL_PATH}")
-        return None
-    return tf.keras.models.load_model(MODEL_PATH, compile=False)
-
-
-@st.cache_data
-def load_configs():
-    if not os.path.isfile(CLASS_LABELS_PATH) or not os.path.isfile(
-        SEVERITY_MAPPING_PATH
-    ):
-        st.error("Configuration JSON files are missing from paths!")
-        return {}, {}
-
-    with open(CLASS_LABELS_PATH, "r", encoding="utf-8") as f:
-        labels = json.load(f)
-
-    if isinstance(labels, list):
-        labels = {i: name for i, name in enumerate(labels)}
-    elif isinstance(labels, dict):
-        labels = {int(key): value for key, value in labels.items()}
-
-    with open(SEVERITY_MAPPING_PATH, "r", encoding="utf-8") as f:
-        severity = json.load(f)
-
-    return labels, severity
-
-
-model = load_ai_model()
-class_labels, severity_mapping = load_configs()
-
-# =====================================================
-# IMAGE PREPROCESSING
-# =====================================================
-IMG_SIZE = 224
-
-
-def preprocess_image(image):
-    image = image.convert("RGB")
-    image = image.resize((IMG_SIZE, IMG_SIZE))
-    image = np.array(image, dtype=np.float32)
-    image = tf.keras.applications.efficientnet.preprocess_input(image)
-    image = np.expand_dims(image, axis=0)
-    return image
-
-
-# =====================================================
-# FRONTEND INTERFACE & PREDICTION LOGIC
+# FRONTEND INTERFACE & API CALL
 # =====================================================
 uploaded_file = st.file_uploader(
     "Choose a road image...", type=["jpg", "jpeg", "png"]
 )
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Road Image", use_container_width=True)
+    # Display the uploaded image directly from memory
+    st.image(uploaded_file, caption="Uploaded Road Image", use_container_width=True)
 
     if st.button("Run Damage Analysis", type="primary"):
-        if model is None:
-            st.error("Model loading failed. Cannot perform evaluation.")
-        else:
-            with st.spinner("Analyzing road conditions..."):
-                try:
-                    processed_image = preprocess_image(image)
-                    prediction = model.predict(processed_image, verbose=0)
-                    prediction_scores = prediction[0]  # Extracting 1D array score
+        with st.spinner("Sending image to AI Backend server..."):
+            try:
+                # Prepare the payload for FastAPI UploadFile
+                files = {
+                    "file": (
+                        uploaded_file.name,
+                        uploaded_file.getvalue(),
+                        uploaded_file.type,
+                    )
+                }
 
-                    predicted_index = int(np.argmax(prediction_scores))
-                    confidence = float(np.max(prediction_scores))
+                # Make the POST request to your FastAPI server
+                response = requests.post(BACKEND_URL, files=files)
 
-                    damage_type = class_labels.get(predicted_index, "Unknown")
-                    
-                    # 🔴 FIXED HERE: Handling dictionary structure safely 🔴
-                    severity_data = severity_mapping.get(damage_type, "Low/Unknown")
-                    
-                    if isinstance(severity_data, dict):
-                        severity = severity_data.get("severity", "Low/Unknown")
-                        recommendation = severity_data.get("recommendation", "No data available")
-                    else:
-                        severity = severity_data
-                        recommendation = "No data available"
+                if response.status_code == 200:
+                    result = response.json()
+
+                    # Extract data from backend JSON response
+                    damage_type = result.get("damage_type", "Unknown")
+                    severity = result.get("severity", "Unknown")
+                    confidence = result.get("confidence", 0.0)
+                    probabilities = result.get("probabilities", {})
 
                     st.success("Analysis Complete successfully!")
 
-                    # Metrics UI display layout split
+                    # Metrics view layout split
                     col1, col2, col3 = st.columns(3)
                     col1.metric(label="Damage Type", value=damage_type)
                     col2.metric(label="Severity Level", value=severity)
-                    col3.metric(label="Confidence", value=f"{round(confidence * 100, 2)}%")
+                    col3.metric(label="Confidence", value=f"{confidence}%")
 
-                    # Display Recommendation underneath metrics
-                    st.info(f"📋 **Action Recommendation:** {recommendation}")
-
-                    # Individual breakdown metrics overview graph layout
-                    st.write("### 📊 Distribution Probabilities")
-                    for index, name in class_labels.items():
-                        if index < len(prediction_scores):
-                            prob_val = float(prediction_scores[index])
+                    # Display Probabilities charts if returned by backend
+                    if probabilities:
+                        st.write("### 📊 Distribution Probabilities")
+                        for name, percentage in probabilities.items():
                             st.write(f"**{name}**")
-                            st.progress(prob_val)
-                            st.caption(f"{round(prob_val * 100, 2)}%")
+                            # Convert back to 0-1 scale for streamlit progress bar
+                            st.progress(percentage / 100)
+                            st.caption(f"{percentage}%")
+                else:
+                    st.error(
+                        f"Backend Error (Status {response.status_code}): {response.text}"
+                    )
 
-                except Exception as e:
-                    st.error(f"Inference processing pipeline failed: {str(e)}")
+            except requests.exceptions.ConnectionError:
+                st.error(
+                    "Could not connect to the backend server. Please verify your BACKEND_URL."
+                )
+            except Exception as e:
+                st.error(
+                    f"Something went wrong during the API pipeline: {str(e)}"
+                )

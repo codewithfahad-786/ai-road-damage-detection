@@ -1,162 +1,122 @@
-import io
 import json
 import os
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 from PIL import Image
+import streamlit as st
 import tensorflow as tf
 
-app = FastAPI(
-    title="AI Road Damage Detection API",
-    description="CNN Based Road Damage Detection and Severity Assessment",
-    version="1.0",
+# =====================================================
+# PAGE CONFIGURATION
+# =====================================================
+st.set_page_config(
+    page_title="AI Road Damage Detection",
+    page_icon="🚧",
+    layout="centered"
 )
 
-# Enable CORS for frontend connectivity
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+st.title("🚧 AI Road Damage Detection & Severity Assessment")
+st.write("Upload an image of the road to detect damages and evaluate severity.")
 
 # =====================================================
-# FILE PATHS
+# FILE PATHS & CACHED LOADING
 # =====================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Streamlit Cloud projects usually have structures like /mount/src/...
+# Adjusting paths relative to app.py location
 MODEL_PATH = os.path.join(BASE_DIR, "road_damage_model.keras")
 CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
 SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
 
-print("========================================")
-print("AI Road Damage Detection API")
-print("========================================")
-print("BASE_DIR:", BASE_DIR)
-print("MODEL_PATH:", MODEL_PATH)
+@st.cache_resource
+def load_ai_model():
+    if not os.path.isfile(MODEL_PATH):
+        st.error(f"Model file missing at: {MODEL_PATH}")
+        return None
+    return tf.keras.models.load_model(MODEL_PATH, compile=False)
 
-# =====================================================
-# CHECK FILES
-# =====================================================
-if not os.path.isfile(MODEL_PATH):
-    raise FileNotFoundError("Model file not found: " + MODEL_PATH)
+@st.cache_data
+def load_configs():
+    # Load Class Labels
+    if not os.path.isfile(CLASS_LABELS_PATH):
+        st.error(f"Class labels missing at: {CLASS_LABELS_PATH}")
+        return {}, {}
+        
+    with open(CLASS_LABELS_PATH, "r", encoding="utf-8") as f:
+        labels = json.load(f)
+    
+    if isinstance(labels, list):
+        labels = {i: name for i, name in enumerate(labels)}
+    elif isinstance(labels, dict):
+        labels = {int(key): value for key, value in labels.items()}
 
-if not os.path.isfile(CLASS_LABELS_PATH):
-    raise FileNotFoundError("Class labels file not found: " + CLASS_LABELS_PATH)
+    # Load Severity Mapping
+    if not os.path.isfile(SEVERITY_MAPPING_PATH):
+        st.error(f"Severity mapping missing at: {SEVERITY_MAPPING_PATH}")
+        return labels, {}
+        
+    with open(SEVERITY_MAPPING_PATH, "r", encoding="utf-8") as f:
+        severity = json.load(f)
+        
+    return labels, severity
 
-if not os.path.isfile(SEVERITY_MAPPING_PATH):
-    raise FileNotFoundError(
-        "Severity mapping file not found: " + SEVERITY_MAPPING_PATH
-    )
-
-# =====================================================
-# LOAD MODEL & CONFIGURATIONS
-# =====================================================
-print("Loading road damage model...")
-model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-print("Model loaded successfully!")
-
-with open(CLASS_LABELS_PATH, "r", encoding="utf-8") as f:
-    class_labels = json.load(f)
-
-if isinstance(class_labels, list):
-    class_labels = {i: name for i, name in enumerate(class_labels)}
-elif isinstance(class_labels, dict):
-    class_labels = {int(key): value for key, value in class_labels.items()}
-
-print("Class labels loaded:", class_labels)
-
-with open(SEVERITY_MAPPING_PATH, "r", encoding="utf-8") as f:
-    severity_mapping = json.load(f)
-print("Severity mapping loaded successfully!")
+# Load everything safely
+model = load_ai_model()
+class_labels, severity_mapping = load_configs()
 
 # =====================================================
 # IMAGE PREPROCESSING
 # =====================================================
 IMG_SIZE = 224
 
-
 def preprocess_image(image):
     image = image.convert("RGB")
     image = image.resize((IMG_SIZE, IMG_SIZE))
     image = np.array(image, dtype=np.float32)
-    # Built-in scaling for EfficientNet models
     image = tf.keras.applications.efficientnet.preprocess_input(image)
     image = np.expand_dims(image, axis=0)
     return image
 
-
 # =====================================================
-# ENDPOINTS
+# STREAMLIT UI & PREDICTION
 # =====================================================
-@app.get("/")
-def home():
-    return {
-        "message": "AI Road Damage Detection API Running",
-        "status": "success",
-        "model_loaded": True,
-    }
+uploaded_file = st.file_uploader("Choose a road image...", type=["jpg", "jpeg", "png"])
 
-
-@app.get("/health")
-def health():
-    return {"status": "healthy", "model_loaded": model is not None}
-
-
-@app.post("/predict")
-def predict(file: UploadFile = File(...)):
-    if not file.content_type:
-        raise HTTPException(status_code=400, detail="File type is missing.")
-
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400, detail="Please upload a valid image."
-        )
-
-    try:
-        # Synchronous file read prevents async worker lockups with TensorFlow
-        contents = file.file.read()
-        if not contents:
-            raise HTTPException(
-                status_code=400, detail="Uploaded file is empty."
-            )
-
-        image = Image.open(io.BytesIO(contents))
-        processed_image = preprocess_image(image)
-
-        # Run inference
-        raw_prediction = model.predict(processed_image, verbose=0)
-
-        # Flatten array to 1D since batch size is always 1
-        prediction_scores = raw_prediction[0]
-
-        predicted_index = int(np.argmax(prediction_scores))
-        confidence = float(np.max(prediction_scores))
-
-        damage_type = class_labels.get(predicted_index, "Unknown")
-        severity = severity_mapping.get(damage_type, "Low/Unknown")
-
-        # Map all index scores back to human-readable names
-        probabilities = {}
-        for index, name in class_labels.items():
-            if index < len(prediction_scores):
-                probabilities[name] = round(
-                    float(prediction_scores[index]) * 100, 2
-                )
-
-        return {
-            "damage_type": damage_type,
-            "severity": severity,
-            "confidence": round(confidence * 100, 2),
-            "probabilities": probabilities,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        # Print actual backend traceback to terminal for seamless debugging
-        print(f"ERROR LOG: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail="Prediction failed: " + str(e)
-        )
+if uploaded_file is not None and model is not None:
+    # Display the uploaded image
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded Road Image", use_container_width=True)
+    
+    with st.spinner("Analyzing road conditions..."):
+        try:
+            # Preprocess and Predict
+            processed_image = preprocess_image(image)
+            prediction = model.predict(processed_image, verbose=0)
+            
+            # Extract scores safely (handling 2D prediction output [[probs]])
+            prediction_scores = prediction[0]
+            
+            predicted_index = int(np.argmax(prediction_scores))
+            confidence = float(np.max(prediction_scores))
+            
+            damage_type = class_labels.get(predicted_index, "Unknown")
+            severity = severity_mapping.get(damage_type, "Low/Unknown")
+            
+            # Display Results
+            st.success("Analysis Complete!")
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric(label="Damage Type", value=damage_type)
+            col2.metric(label="Severity Level", value=severity)
+            col3.metric(label="Confidence", value=f"{round(confidence * 100, 2)}%")
+            
+            # Show Detailed Probabilities
+            st.write("### 📊 Class Probabilities")
+            for index, name in class_labels.items():
+                if index < len(prediction_scores):
+                    prob_val = float(prediction_scores[index])
+                    st.write(f"**{name}**")
+                    st.progress(prob_val)
+                    st.caption(f"{round(prob_val * 100, 2)}%")
+                    
+        except Exception as e:
+            st.error(f"Prediction failed inside Streamlit: {str(e)}")

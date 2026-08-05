@@ -13,7 +13,8 @@ uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png
 
 if uploaded_file is not None:
     # FIX: use_column_width ko use_container_width se replace kar diya hai
-    st.image(uploaded_file, caption='Uploaded Image.', use_container_width=True)
+   st.image(uploaded_file, caption='Uploaded Image.', use_column_width=True)
+
     
     if st.button("Analyze Road Damage"):
         with st.spinner("Analyzing image through CNN model... Please wait."):

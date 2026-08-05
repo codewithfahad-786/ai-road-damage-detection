@@ -5,15 +5,19 @@ import requests
 # PAGE SETUP
 # =====================================================
 st.set_page_config(
-    page_title="AI Road Damage Detection", page_icon="🚧", layout="centered"
+    page_title="AI Road Damage Detection", 
+    page_icon="🚧", 
+    layout="centered"
 )
 
 st.title("🚧 AI Road Damage Detection & Severity Assessment")
-st.write("Upload an image of the road to detect damages via FastAPI Backend.")
+st.write("Upload an image of the road to detect damages via AI Backend.")
 
-# 🔴 APNE LIVE DEPLOYED BACKEND KA URL YAHAN DALEIN 🔴
-# Localhost internet par kaam nahi karega, live https link hona zaroori hai.
-BACKEND_URL = "ai-road-damage-detection-production.up.railway.app"
+# =====================================================
+# LIVE RAILWAY BACKEND CONFIGURATION
+# =====================================================
+# Protocol scheme (https://) and action endpoint (/predict) included safely
+BACKEND_URL = "https://railway.app"
 
 # =====================================================
 # FRONTEND INTERFACE & API CALL
@@ -23,13 +27,13 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    # Display the uploaded image directly from memory
+    # Display the uploaded image directly on screen
     st.image(uploaded_file, caption="Uploaded Road Image", use_container_width=True)
 
     if st.button("Run Damage Analysis", type="primary"):
         with st.spinner("Sending image to AI Backend server..."):
             try:
-                # Prepare the payload for FastAPI UploadFile
+                # Prepare the payload for FastAPI UploadFile structure
                 files = {
                     "file": (
                         uploaded_file.name,
@@ -38,13 +42,13 @@ if uploaded_file is not None:
                     )
                 }
 
-                # Make the POST request to your FastAPI server
+                # Make the POST request to the Railway server
                 response = requests.post(BACKEND_URL, files=files)
 
                 if response.status_code == 200:
                     result = response.json()
 
-                    # Extract data from backend JSON response
+                    # Extract analytical details from backend response
                     damage_type = result.get("damage_type", "Unknown")
                     severity = result.get("severity", "Unknown")
                     confidence = result.get("confidence", 0.0)
@@ -52,18 +56,18 @@ if uploaded_file is not None:
 
                     st.success("Analysis Complete successfully!")
 
-                    # Metrics view layout split
+                    # Split layout view metrics dashboard
                     col1, col2, col3 = st.columns(3)
                     col1.metric(label="Damage Type", value=damage_type)
                     col2.metric(label="Severity Level", value=severity)
                     col3.metric(label="Confidence", value=f"{confidence}%")
 
-                    # Display Probabilities charts if returned by backend
+                    # Display individual distribution bars if present
                     if probabilities:
                         st.write("### 📊 Distribution Probabilities")
                         for name, percentage in probabilities.items():
                             st.write(f"**{name}**")
-                            # Convert back to 0-1 scale for streamlit progress bar
+                            # Convert back to 0-1 scale for progress visualization
                             st.progress(percentage / 100)
                             st.caption(f"{percentage}%")
                 else:
@@ -73,7 +77,7 @@ if uploaded_file is not None:
 
             except requests.exceptions.ConnectionError:
                 st.error(
-                    "Could not connect to the backend server. Please verify your BACKEND_URL."
+                    "Could not connect to the backend server. The server might be waking up or offline. Please retry in a few seconds."
                 )
             except Exception as e:
                 st.error(

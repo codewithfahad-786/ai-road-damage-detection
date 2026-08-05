@@ -1,86 +1,71 @@
-import streamlit as st
-import requests
+import io
+import json
+import os
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse  # Import JSONResponse
+import numpy as np
+from PIL import Image
+import tensorflow as tf
 
-# =====================================================
-# PAGE SETUP
-# =====================================================
-st.set_page_config(
-    page_title="AI Road Damage Detection", 
-    page_icon="🚧", 
-    layout="centered"
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-st.title("🚧 AI Road Damage Detection & Severity Assessment")
-st.write("Upload an image of the road to detect damages via AI Backend.")
+# ... (Aapka baki model loading aur config code same rahega) ...
 
-# =====================================================
-# LIVE RAILWAY BACKEND CONFIGURATION
-# =====================================================
-BACKEND_URL = "https://railway.app"
 
-# =====================================================
-# FRONTEND INTERFACE & API CALL
-# =====================================================
-uploaded_file = st.file_uploader(
-    "Choose a road image...", type=["jpg", "jpeg", "png"]
-)
+@app.post("/predict")
+def predict(file: UploadFile = File(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400, detail="Please upload a valid image."
+        )
 
-if uploaded_file is not None:
-    st.image(uploaded_file, caption="Uploaded Road Image", use_container_width=True)
+    try:
+        contents = file.file.read()
+        image = Image.open(io.BytesIO(contents))
+        processed_image = preprocess_image(image)
 
-    if st.button("Run Damage Analysis", type="primary"):
-        with st.spinner("Sending image to AI Backend server..."):
-            try:
-                # Prepare the payload for FastAPI UploadFile structure
-                files = {
-                    "file": (
-                        uploaded_file.name,
-                        uploaded_file.getvalue(),
-                        uploaded_file.type,
-                    )
-                }
+        # Prediction
+        prediction = model.predict(processed_image, verbose=0)
 
-                # Make the POST request to the Railway server
-                response = requests.post(BACKEND_URL, files=files)
+        # Standard Python type conversion (Crucial for JSON)
+        predicted_index = int(np.argmax(prediction[0]))
+        confidence = float(np.max(prediction[0]))
 
-                # Catching non-JSON HTML/Text error messages from backend safely
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        
-                        # Extract analytical details from backend response
-                        damage_type = result.get("damage_type", "Unknown")
-                        severity = result.get("severity", "Unknown")
-                        confidence = result.get("confidence", 0.0)
-                        probabilities = result.get("probabilities", {})
+        damage_type = class_labels.get(predicted_index, "Unknown")
+        severity_data = severity_mapping.get(damage_type, "Low/Unknown")
 
-                        st.success("Analysis Complete successfully!")
+        if isinstance(severity_data, dict):
+            severity = severity_data.get("severity", "Low/Unknown")
+        else:
+            severity = severity_data
 
-                        # Split layout view metrics dashboard
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric(label="Damage Type", value=damage_type)
-                        col2.metric(label="Severity Level", value=severity)
-                        col3.metric(label="Confidence", value=f"{confidence}%")
-
-                        if probabilities:
-                            st.write("### 📊 Distribution Probabilities")
-                            for name, percentage in probabilities.items():
-                                st.write(f"**{name}**")
-                                st.progress(percentage / 100)
-                                st.caption(f"{percentage}%")
-                                
-                    except ValueError:
-                        st.error("🔴 Backend returned a 200 OK success status, but the content wasn't valid JSON text.")
-                        st.text_area("Raw Server Output Data:", value=response.text, height=250)
-                else:
-                    st.error(f"🔴 Backend Error (Status Code: {response.status_code})")
-                    st.text_area("Server Raw Response Logs:", value=response.text, height=250)
-
-            except requests.exceptions.ConnectionError:
-                st.error(
-                    "Could not connect to the backend server. The server might be waking up or offline. Please retry in a few seconds."
+        probabilities = {}
+        for index, name in class_labels.items():
+            if index < len(prediction[0]):
+                probabilities[name] = round(
+                    float(prediction[0][index]) * 100, 2
                 )
-            except Exception as e:
-                st.error(
-                    f"Something went wrong during the API pipeline: {str(e)}"
-                )
+
+        # 🔴 EXPLICIT JSON RESPONSE FORCING (Fixes 200 OK Content issues)
+        return JSONResponse(
+            content={
+                "damage_type": str(damage_type),
+                "severity": str(severity),
+                "confidence": round(confidence * 100, 2),
+                "probabilities": probabilities,
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500, content={"error": f"Prediction failed: {str(e)}"}
+        )

@@ -33,7 +33,10 @@ app.add_middleware(
 # LOAD MODEL
 # =====================================================
 
-MODEL_PATH = "road_damage_model.keras"
+MODEL_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "road_damage_model.keras"
+)
 
 model = tf.keras.models.load_model(MODEL_PATH)
 
@@ -45,8 +48,13 @@ print("Model:", model.name)
 # LOAD CLASS LABELS
 # =====================================================
 
-with open("class_labels.json", "r") as f:
+BASE_DIR = os.path.dirname(__file__)
+
+with open(os.path.join(BASE_DIR, "class_labels.json"), "r") as f:
     class_labels = json.load(f)
+
+with open(os.path.join(BASE_DIR, "severity_mapping.json"), "r") as f:
+    severity_mapping = json.load(f)
 
 
 # If JSON is list format
@@ -70,8 +78,7 @@ print(class_labels)
 # LOAD SEVERITY MAPPING
 # =====================================================
 
-with open("severity_mapping.json", "r") as f:
-    severity_mapping = json.load(f)
+)
 
 
 # =====================================================

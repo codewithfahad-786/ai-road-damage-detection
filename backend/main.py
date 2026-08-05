@@ -7,23 +7,11 @@ import json
 import io
 import os
 
-# =====================================================
-
-# APP INITIALIZATION
-
-# =====================================================
-
 app = FastAPI(
 title="AI Road Damage Detection API",
 description="CNN Based Road Damage Detection and Severity Assessment",
 version="1.0"
 )
-
-# =====================================================
-
-# CORS
-
-# =====================================================
 
 app.add_middleware(
 CORSMiddleware,
@@ -35,11 +23,11 @@ allow_headers=["*"],
 
 # =====================================================
 
-# BASE DIRECTORY
+# FILE PATHS
 
 # =====================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(**file**))
 
 MODEL_PATH = os.path.join(
 BASE_DIR,
@@ -56,32 +44,31 @@ BASE_DIR,
 "severity_mapping.json"
 )
 
-# =====================================================
-
-# CHECK REQUIRED FILES
-
-# =====================================================
-
 print("========================================")
 print("AI Road Damage Detection API")
 print("========================================")
+print("BASE_DIR:", BASE_DIR)
+print("MODEL_PATH:", MODEL_PATH)
 
-print("Backend directory:", BASE_DIR)
-print("Model path:", MODEL_PATH)
+# =====================================================
 
-if not os.path.exists(MODEL_PATH):
+# CHECK FILES
+
+# =====================================================
+
+if not os.path.isfile(MODEL_PATH):
 raise FileNotFoundError(
-f"Model file not found: {MODEL_PATH}"
+"Model file not found: " + MODEL_PATH
 )
 
-if not os.path.exists(CLASS_LABELS_PATH):
+if not os.path.isfile(CLASS_LABELS_PATH):
 raise FileNotFoundError(
-f"class_labels.json not found: {CLASS_LABELS_PATH}"
+"Class labels file not found: " + CLASS_LABELS_PATH
 )
 
-if not os.path.exists(SEVERITY_MAPPING_PATH):
+if not os.path.isfile(SEVERITY_MAPPING_PATH):
 raise FileNotFoundError(
-f"severity_mapping.json not found: {SEVERITY_MAPPING_PATH}"
+"Severity mapping file not found: " + SEVERITY_MAPPING_PATH
 )
 
 # =====================================================
@@ -98,7 +85,6 @@ compile=False
 )
 
 print("Model loaded successfully!")
-print("Model:", model.name)
 
 # =====================================================
 
@@ -113,8 +99,6 @@ encoding="utf-8"
 ) as f:
 class_labels = json.load(f)
 
-# Convert list format to dictionary
-
 if isinstance(class_labels, list):
 
 ```
@@ -123,8 +107,6 @@ class_labels = {
     for i, name in enumerate(class_labels)
 }
 ```
-
-# Convert JSON string keys to integer keys
 
 elif isinstance(class_labels, dict):
 
@@ -135,8 +117,7 @@ class_labels = {
 }
 ```
 
-print("Classes:")
-print(class_labels)
+print("Class labels:", class_labels)
 
 # =====================================================
 
@@ -164,26 +145,21 @@ IMG_SIZE = 224
 def preprocess_image(image):
 
 ```
-# Convert to RGB
 image = image.convert("RGB")
 
-# Resize
 image = image.resize(
     (IMG_SIZE, IMG_SIZE)
 )
 
-# Convert to NumPy array
 image = np.array(
     image,
     dtype=np.float32
 )
 
-# EfficientNet preprocessing
 image = tf.keras.applications.efficientnet.preprocess_input(
     image
 )
 
-# Add batch dimension
 image = np.expand_dims(
     image,
     axis=0
@@ -194,7 +170,7 @@ return image
 
 # =====================================================
 
-# ROOT API
+# ROOT ENDPOINT
 
 # =====================================================
 
@@ -211,7 +187,7 @@ return {
 
 # =====================================================
 
-# HEALTH CHECK
+# HEALTH ENDPOINT
 
 # =====================================================
 
@@ -227,7 +203,7 @@ return {
 
 # =====================================================
 
-# PREDICTION API
+# PREDICTION ENDPOINT
 
 # =====================================================
 
@@ -237,18 +213,20 @@ file: UploadFile = File(...)
 ):
 
 ```
-# Check file type
-if not file.content_type or not file.content_type.startswith(
-    "image/"
-):
+if not file.content_type:
     raise HTTPException(
         status_code=400,
-        detail="Please upload a valid image file."
+        detail="File type is missing."
+    )
+
+if not file.content_type.startswith("image/"):
+    raise HTTPException(
+        status_code=400,
+        detail="Please upload a valid image."
     )
 
 try:
 
-    # Read uploaded image
     contents = await file.read()
 
     if not contents:
@@ -257,67 +235,55 @@ try:
             detail="Uploaded file is empty."
         )
 
-    # Open image
     image = Image.open(
         io.BytesIO(contents)
     )
 
-    # Preprocess image
     processed_image = preprocess_image(
         image
     )
 
-    # Model prediction
     prediction = model.predict(
         processed_image,
         verbose=0
     )
 
-    # Get predicted class
     predicted_index = int(
         np.argmax(prediction[0])
     )
 
-    # Confidence
     confidence = float(
         np.max(prediction[0])
     )
 
-    # Get damage type
     damage_type = class_labels.get(
         predicted_index,
         "Unknown"
     )
 
-    # Get severity
     severity = severity_mapping.get(
         damage_type,
         "Unknown"
     )
 
-    # Calculate probabilities
     probabilities = {}
 
-    for i, name in class_labels.items():
+    for index, name in class_labels.items():
 
-        if i < len(prediction[0]):
+        if index < len(prediction[0]):
 
             probabilities[name] = round(
-                float(prediction[0][i]) * 100,
+                float(prediction[0][index]) * 100,
                 2
             )
 
     return {
-
         "damage_type": damage_type,
-
         "severity": severity,
-
         "confidence": round(
             confidence * 100,
             2
         ),
-
         "probabilities": probabilities
     }
 
@@ -328,6 +294,6 @@ except Exception as e:
 
     raise HTTPException(
         status_code=500,
-        detail=f"Prediction failed: {str(e)}"
+        detail="Prediction failed: " + str(e)
     )
 ```

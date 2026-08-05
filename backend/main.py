@@ -1,3 +1,4 @@
+```python
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -19,7 +20,10 @@ app = FastAPI(
 )
 
 
-# Allow frontend connection
+# =====================================================
+# CORS
+# =====================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,15 +34,27 @@ app.add_middleware(
 
 
 # =====================================================
+# BASE DIRECTORY
+# =====================================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# =====================================================
 # LOAD MODEL
 # =====================================================
 
 MODEL_PATH = os.path.join(
-    os.path.dirname(__file__),
+    BASE_DIR,
     "road_damage_model.keras"
 )
 
-model = tf.keras.models.load_model(MODEL_PATH)
+print("Loading model...")
+print("Model path:", MODEL_PATH)
+
+model = tf.keras.models.load_model(
+    MODEL_PATH
+)
 
 print("Model loaded successfully!")
 print("Model:", model.name)
@@ -48,26 +64,34 @@ print("Model:", model.name)
 # LOAD CLASS LABELS
 # =====================================================
 
-BASE_DIR = os.path.dirname(__file__)
+CLASS_LABELS_PATH = os.path.join(
+    BASE_DIR,
+    "class_labels.json"
+)
 
-with open(os.path.join(BASE_DIR, "class_labels.json"), "r") as f:
+with open(
+    CLASS_LABELS_PATH,
+    "r"
+) as f:
     class_labels = json.load(f)
 
-with open(os.path.join(BASE_DIR, "severity_mapping.json"), "r") as f:
-    severity_mapping = json.load(f)
 
-
-# If JSON is list format
+# Convert list format to dictionary
 if isinstance(class_labels, list):
 
     class_labels = {
-        i: name 
+        i: name
         for i, name in enumerate(class_labels)
     }
 
 
-print("Classes:")
-print(class_labels)
+# Convert dictionary keys to integers
+if isinstance(class_labels, dict):
+
+    class_labels = {
+        int(k): v
+        for k, v in class_labels.items()
+    }
 
 
 print("Classes:")
@@ -78,43 +102,60 @@ print(class_labels)
 # LOAD SEVERITY MAPPING
 # =====================================================
 
+SEVERITY_PATH = os.path.join(
+    BASE_DIR,
+    "severity_mapping.json"
 )
+
+with open(
+    SEVERITY_PATH,
+    "r"
+) as f:
+    severity_mapping = json.load(f)
+
+
+print("Severity mapping loaded successfully!")
+
+
+# =====================================================
+# IMAGE SETTINGS
+# =====================================================
+
+IMG_SIZE = 224
 
 
 # =====================================================
 # IMAGE PREPROCESSING
 # =====================================================
 
-IMG_SIZE = 224
-
-
 def preprocess_image(image):
 
+    # Convert image to RGB
     image = image.convert("RGB")
 
+    # Resize image
     image = image.resize(
         (IMG_SIZE, IMG_SIZE)
     )
 
+    # Convert to NumPy array
     image = np.array(
         image,
         dtype=np.float32
     )
-
 
     # EfficientNet preprocessing
     image = tf.keras.applications.efficientnet.preprocess_input(
         image
     )
 
-
+    # Add batch dimension
     image = np.expand_dims(
         image,
         axis=0
     )
 
     return image
-
 
 
 # =====================================================
@@ -125,10 +166,22 @@ def preprocess_image(image):
 def home():
 
     return {
-        "message":
-        "AI Road Damage Detection API Running"
+        "status": "success",
+        "message": "AI Road Damage Detection API Running",
+        "endpoint": "/predict"
     }
 
+
+# =====================================================
+# HEALTH CHECK
+# =====================================================
+
+@app.get("/health")
+def health():
+
+    return {
+        "status": "healthy"
+    }
 
 
 # =====================================================
@@ -140,77 +193,119 @@ async def predict(
     file: UploadFile = File(...)
 ):
 
-    # Read image
+    try:
 
-    contents = await file.read()
+        # -------------------------------------------------
+        # READ IMAGE
+        # -------------------------------------------------
 
-    image = Image.open(
-        io.BytesIO(contents)
-    )
+        contents = await file.read()
 
-
-    # preprocess
-
-    processed_image = preprocess_image(
-        image
-    )
-
-
-    # prediction
-
-    prediction = model.predict(
-        processed_image,
-        verbose=0
-    )
-
-
-    predicted_index = int(
-        np.argmax(prediction)
-    )
-
-
-    confidence = float(
-        np.max(prediction)
-    )
-
-
-    damage_type = class_labels[
-        predicted_index
-    ]
-
-
-    # severity
-
-    severity = severity_mapping.get(
-        damage_type,
-        "Unknown"
-    )
-
-
-    probabilities = {}
-
-    for i, name in class_labels.items():
-
-        probabilities[name] = round(
-            float(prediction[0][i]) * 100,
-            2
+        image = Image.open(
+            io.BytesIO(contents)
         )
 
 
-    return {
+        # -------------------------------------------------
+        # PREPROCESS IMAGE
+        # -------------------------------------------------
 
-        "damage_type":
+        processed_image = preprocess_image(
+            image
+        )
+
+
+        # -------------------------------------------------
+        # MODEL PREDICTION
+        # -------------------------------------------------
+
+        prediction = model.predict(
+            processed_image,
+            verbose=0
+        )
+
+
+        # -------------------------------------------------
+        # GET PREDICTED CLASS
+        # -------------------------------------------------
+
+        predicted_index = int(
+            np.argmax(prediction[0])
+        )
+
+
+        # -------------------------------------------------
+        # CONFIDENCE
+        # -------------------------------------------------
+
+        confidence = float(
+            np.max(prediction[0])
+        )
+
+
+        # -------------------------------------------------
+        # DAMAGE TYPE
+        # -------------------------------------------------
+
+        damage_type = class_labels.get(
+            predicted_index,
+            "Unknown"
+        )
+
+
+        # -------------------------------------------------
+        # SEVERITY
+        # -------------------------------------------------
+
+        severity = severity_mapping.get(
             damage_type,
+            "Unknown"
+        )
 
-        "severity":
-            severity,
 
-        "confidence":
-            round(
-                confidence * 100,
+        # -------------------------------------------------
+        # PROBABILITIES
+        # -------------------------------------------------
+
+        probabilities = {}
+
+        for i, name in class_labels.items():
+
+            probabilities[name] = round(
+                float(prediction[0][i]) * 100,
                 2
-            ),
+            )
 
-        "probabilities":
-            probabilities
-    }
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+
+        return {
+
+            "status": "success",
+
+            "damage_type":
+                damage_type,
+
+            "severity":
+                severity,
+
+            "confidence":
+                round(
+                    confidence * 100,
+                    2
+                ),
+
+            "probabilities":
+                probabilities
+        }
+
+
+    except Exception as e:
+
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+```

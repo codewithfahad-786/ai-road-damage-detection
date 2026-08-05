@@ -39,7 +39,7 @@ allow_headers=["*"],
 
 # =====================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(**file**))
+BASE_DIR = os.path.abspath(__file__)
 
 # =====================================================
 

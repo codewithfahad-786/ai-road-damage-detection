@@ -2,19 +2,7 @@ import streamlit as st
 import requests
 from PIL import Image
 
-# =========================
-
-# Configuration
-
-# =========================
-
 API_URL = "https://ai-road-damage-detection-production.up.railway.app"
-
-# =========================
-
-# Page Configuration
-
-# =========================
 
 st.set_page_config(
 page_title="AI Road Damage Detection",
@@ -22,36 +10,15 @@ page_icon="🛣️",
 layout="centered"
 )
 
-# =========================
-
-# Title
-
-# =========================
-
 st.title("🛣️ AI Road Damage Detection")
-st.write(
-"Upload a road image and the AI model will detect the "
-"type and severity of road damage."
-)
+st.write("Upload a road image to detect road damage type and severity.")
 
 st.divider()
 
-# =========================
-
-# Image Upload
-
-# =========================
-
 uploaded_file = st.file_uploader(
-"Upload a road image",
+"Upload Road Image",
 type=["jpg", "jpeg", "png"]
 )
-
-# =========================
-
-# Prediction
-
-# =========================
 
 if uploaded_file is not None:
 
@@ -69,6 +36,7 @@ if st.button("🔍 Detect Road Damage"):
     with st.spinner("Analyzing image..."):
 
         try:
+
             files = {
                 "file": (
                     uploaded_file.name,
@@ -78,7 +46,7 @@ if st.button("🔍 Detect Road Damage"):
             }
 
             response = requests.post(
-                f"{API_URL}/predict",
+                API_URL + "/predict",
                 files=files,
                 timeout=120
             )
@@ -97,17 +65,17 @@ if st.button("🔍 Detect Road Damage"):
                     0
                 )
 
-                severity_data = result.get(
+                severity_info = result.get(
                     "severity",
                     {}
                 )
 
-                severity = severity_data.get(
+                severity = severity_info.get(
                     "severity",
                     "Unknown"
                 )
 
-                recommendation = severity_data.get(
+                recommendation = severity_info.get(
                     "recommendation",
                     "No recommendation available"
                 )
@@ -117,9 +85,9 @@ if st.button("🔍 Detect Road Damage"):
                     {}
                 )
 
-                st.success("✅ Prediction completed!")
+                st.success("Prediction completed successfully!")
 
-                st.subheader("📊 Detection Result")
+                st.subheader("Detection Result")
 
                 col1, col2 = st.columns(2)
 
@@ -132,73 +100,59 @@ if st.button("🔍 Detect Road Damage"):
                 with col2:
                     st.metric(
                         "Confidence",
-                        f"{confidence:.2f}%"
+                        f"{float(confidence):.2f}%"
                     )
 
-                st.subheader("⚠️ Severity")
+                st.subheader("Severity")
 
                 st.write(
-                    f"**Severity:** {severity}"
+                    "Severity: " + str(severity)
                 )
 
                 st.write(
-                    f"**Recommendation:** {recommendation}"
+                    "Recommendation: " + str(recommendation)
                 )
 
-                st.subheader("📈 Class Probabilities")
+                st.subheader("Class Probabilities")
 
                 for class_name, probability in probabilities.items():
 
+                    probability = float(probability)
+
                     st.write(
-                        f"**{class_name}:** "
-                        f"{probability:.2f}%"
+                        f"{class_name}: {probability:.2f}%"
                     )
 
                     st.progress(
-                        min(
-                            max(
-                                float(probability) / 100,
-                                0.0
-                            ),
-                            1.0
-                        )
+                        min(max(probability / 100, 0.0), 1.0)
                     )
 
             else:
 
                 st.error(
-                    f"API Error: {response.status_code}"
+                    f"Backend returned error: {response.status_code}"
                 )
 
-                st.code(
-                    response.text
-                )
+                st.code(response.text)
 
         except requests.exceptions.Timeout:
 
             st.error(
-                "⏱️ Request timed out. "
-                "The Railway backend is taking too long to respond."
+                "Backend request timed out. Please try again."
             )
 
         except requests.exceptions.ConnectionError:
 
             st.error(
-                "❌ Could not connect to the Railway backend."
+                "Could not connect to Railway backend."
             )
 
         except Exception as e:
 
             st.error(
-                f"❌ Error: {str(e)}"
+                f"Unexpected error: {str(e)}"
             )
 ```
-
-# =========================
-
-# Footer
-
-# =========================
 
 st.divider()
 

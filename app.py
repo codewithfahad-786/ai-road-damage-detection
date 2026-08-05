@@ -1,101 +1,149 @@
 import streamlit as st
-import numpy as np
-import json
-
+import requests
 from PIL import Image
-from tensorflow.keras.models import load_model
+from io import BytesIO
+
+# Railway FastAPI URL
+API_URL = "https://agile-energy-production-e5d4.up.railway.app/predict"
 
 
-# -----------------------------
-# Page Configuration
-# -----------------------------
-
+# Page configuration
 st.set_page_config(
     page_title="AI Road Damage Detection",
-    page_icon="🛣️",
+    page_icon="🚧",
     layout="centered"
 )
 
-st.title("🛣️ AI-Based Smart Road Damage Detection")
-st.write("Upload a road damage image for prediction.")
+
+# Title
+st.title("🚧 AI Road Damage Detection")
+st.write(
+    "Upload a road image to detect road damage, "
+    "confidence, severity, and recommended action."
+)
 
 
-# -----------------------------
-# Load Model
-# -----------------------------
-
-@st.cache_resource
-def load_ai_model():
-
-    model = load_model("road_damage_model.keras")
-
-    with open("class_labels.json", "r") as f:
-        class_labels = json.load(f)
-
-    with open("severity_mapping.json", "r") as f:
-        severity_mapping = json.load(f)
-
-    return model, class_labels, severity_mapping
-
-
-model, class_labels, severity_mapping = load_ai_model()
-
-
-# -----------------------------
-# Image Upload
-# -----------------------------
-
+# Image uploader
 uploaded_file = st.file_uploader(
-    "Choose an image",
+    "Upload a road image",
     type=["jpg", "jpeg", "png"]
 )
 
 
-# -----------------------------
-# Prediction
-# -----------------------------
-
 if uploaded_file is not None:
 
-    image = Image.open(uploaded_file).convert("RGB")
+    # Display uploaded image
+    image = Image.open(uploaded_file)
 
     st.image(
         image,
-        caption="Uploaded Image",
+        caption="Uploaded Road Image",
         use_container_width=True
     )
 
-    img = image.resize((224, 224))
+    # Prediction button
+    if st.button("🔍 Detect Road Damage", use_container_width=True):
 
-    img_array = np.array(img, dtype=np.float32)
+        with st.spinner("Analyzing road image..."):
 
-    img_array = np.expand_dims(img_array, axis=0)
+            try:
+                # Reset file position
+                uploaded_file.seek(0)
 
-    prediction = model.predict(
-        img_array,
-        verbose=0
-    )
+                files = {
+                    "file": (
+                        uploaded_file.name,
+                        uploaded_file.getvalue(),
+                        uploaded_file.type
+                    )
+                }
 
-    predicted_index = np.argmax(prediction)
+                # Send image to FastAPI
+                response = requests.post(
+                    API_URL,
+                    files=files,
+                    timeout=120
+                )
 
-    confidence = float(
-        prediction[0][predicted_index]
-    ) * 100
+                # Check response
+                if response.status_code == 200:
 
-    damage = class_labels[predicted_index]
+                    result = response.json()
 
-    severity = severity_mapping[damage]["severity"]
+                    damage_type = result["damage_type"]
+                    confidence = result["confidence"]
 
-    recommendation = severity_mapping[damage]["recommendation"]
+                    severity_data = result["severity"]
 
-    st.success("Prediction Completed!")
+                    severity = severity_data["severity"]
+                    recommendation = severity_data["recommendation"]
 
-    st.subheader("Prediction Result")
+                    # Results
+                    st.success("Prediction completed successfully!")
 
-    st.write(f"**Damage Type:** {damage}")
+                    st.subheader("📊 Detection Result")
 
-    st.write(f"**Confidence:** {confidence:.2f}%")
+                    col1, col2 = st.columns(2)
 
-    st.write(f"**Severity:** {severity}")
+                    with col1:
+                        st.metric(
+                            "Damage Type",
+                            damage_type
+                        )
 
-    st.write(f"**Recommendation:** {recommendation}")
+                    with col2:
+                        st.metric(
+                            "Confidence",
+                            f"{confidence:.2f}%"
+                        )
+
+                    st.subheader("⚠️ Severity")
+
+                    st.info(severity)
+
+                    st.subheader("💡 Recommendation")
+
+                    st.write(recommendation)
+
+                    # Probabilities
+                    st.subheader("📈 Class Probabilities")
+
+                    probabilities = result["probabilities"]
+
+                    for class_name, probability in probabilities.items():
+
+                        st.write(
+                            f"**{class_name.replace('_', ' ')}:** "
+                            f"{probability:.2f}%"
+                        )
+
+                        st.progress(
+                            min(int(probability), 100)
+                        )
+
+                else:
+
+                    st.error(
+                        f"API Error: {response.status_code}"
+                    )
+
+                    st.write(response.text)
+
+            except requests.exceptions.Timeout:
+
+                st.error(
+                    "The API took too long to respond. "
+                    "Please try again."
+                )
+
+            except requests.exceptions.ConnectionError:
+
+                st.error(
+                    "Could not connect to the Railway API."
+                )
+
+            except Exception as e:
+
+                st.error(
+                    f"Something went wrong: {str(e)}"
+                )

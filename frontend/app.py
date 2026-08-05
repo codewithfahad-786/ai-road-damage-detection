@@ -2,7 +2,6 @@
 import streamlit as st
 import requests
 from PIL import Image
-import io
 
 # ============================================================
 # CONFIGURATION
@@ -21,45 +20,12 @@ st.set_page_config(
 )
 
 # ============================================================
-# CUSTOM CSS
-# ============================================================
-
-st.markdown("""
-<style>
-    .main-title {
-        font-size: 42px;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-
-    .subtitle {
-        text-align: center;
-        font-size: 18px;
-        margin-bottom: 30px;
-    }
-
-    .result-box {
-        padding: 20px;
-        border-radius: 10px;
-        border: 1px solid #ddd;
-        margin-top: 20px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
 # HEADER
 # ============================================================
 
-st.markdown(
-    '<div class="main-title">🛣️ AI Road Damage Detection</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">Upload a road image to detect road damage and assess its severity.</div>',
-    unsafe_allow_html=True
+st.title("🛣️ AI Road Damage Detection")
+st.write(
+    "Upload a road image to detect road damage and assess its severity."
 )
 
 st.divider()
@@ -69,12 +35,12 @@ st.divider()
 # ============================================================
 
 with st.sidebar:
-    st.header("About the Project")
+    st.header("About Project")
 
     st.write(
         """
         This application uses a deep learning model to detect
-        road damage from uploaded images.
+        road damage from images.
 
         **Model:** EfficientNetB0
 
@@ -89,11 +55,8 @@ with st.sidebar:
 
     st.divider()
 
-    st.write("### Backend")
-    st.code(API_URL)
-
-    st.write("Backend: Railway")
-    st.write("Frontend: Streamlit")
+    st.write("**Backend:** Railway")
+    st.write("**Frontend:** Streamlit")
 
 # ============================================================
 # IMAGE UPLOAD
@@ -107,190 +70,227 @@ uploaded_file = st.file_uploader(
 )
 
 # ============================================================
-# IMAGE PREVIEW
+# PROCESS IMAGE
 # ============================================================
 
 if uploaded_file is not None:
 
-    try:
-        image = Image.open(uploaded_file)
+    image = Image.open(uploaded_file)
 
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col1:
-            st.subheader("Uploaded Image")
-            st.image(
-                image,
-                caption="Road Image",
-                use_container_width=True
-            )
-
-        with col2:
-            st.subheader("Image Information")
-
-            st.write(f"**File name:** {uploaded_file.name}")
-            st.write(f"**Format:** {image.format}")
-            st.write(f"**Size:** {image.size}")
-
-        st.divider()
-
-        # ====================================================
-        # PREDICTION BUTTON
-        # ====================================================
-
-        if st.button(
-            "🔍 Detect Road Damage",
-            type="primary",
+    with col1:
+        st.subheader("Uploaded Image")
+        st.image(
+            image,
+            caption="Road Image",
             use_container_width=True
-        ):
+        )
 
-            with st.spinner("Analyzing image..."):
+    with col2:
+        st.subheader("Image Information")
+        st.write(f"**File:** {uploaded_file.name}")
+        st.write(f"**Size:** {image.size}")
+        st.write(f"**Format:** {image.format}")
 
-                try:
-                    # Reset file pointer
-                    uploaded_file.seek(0)
+    st.divider()
 
-                    # Read image bytes
-                    image_bytes = uploaded_file.read()
+    # ========================================================
+    # PREDICTION BUTTON
+    # ========================================================
 
-                    # Send image to FastAPI backend
-                    response = requests.post(
-                        f"{API_URL}/predict",
-                        files={
-                            "file": (
-                                uploaded_file.name,
-                                image_bytes,
-                                uploaded_file.type
-                            )
-                        },
-                        timeout=120
+    if st.button(
+        "🔍 Detect Road Damage",
+        type="primary",
+        use_container_width=True
+    ):
+
+        with st.spinner("Analyzing road image..."):
+
+            try:
+
+                uploaded_file.seek(0)
+
+                image_bytes = uploaded_file.read()
+
+                response = requests.post(
+                    f"{API_URL}/predict",
+                    files={
+                        "file": (
+                            uploaded_file.name,
+                            image_bytes,
+                            uploaded_file.type
+                        )
+                    },
+                    timeout=120
+                )
+
+                # =================================================
+                # SUCCESS
+                # =================================================
+
+                if response.status_code == 200:
+
+                    result = response.json()
+
+                    st.success("✅ Road damage detection completed!")
+
+                    # =================================================
+                    # GET RESPONSE DATA
+                    # =================================================
+
+                    damage_type = result.get(
+                        "damage_type",
+                        "Unknown"
+                    )
+
+                    confidence = result.get(
+                        "confidence",
+                        0
+                    )
+
+                    severity_data = result.get(
+                        "severity",
+                        {}
+                    )
+
+                    severity = severity_data.get(
+                        "severity",
+                        "Unknown"
+                    )
+
+                    recommendation = severity_data.get(
+                        "recommendation",
+                        "No recommendation available"
+                    )
+
+                    probabilities = result.get(
+                        "probabilities",
+                        {}
                     )
 
                     # =================================================
-                    # RESPONSE HANDLING
+                    # RESULT
                     # =================================================
 
-                    if response.status_code == 200:
+                    st.subheader("📊 Detection Result")
 
-                        result = response.json()
+                    c1, c2, c3 = st.columns(3)
 
-                        st.success("✅ Analysis completed successfully!")
-
-                        st.subheader("📊 Detection Result")
-
-                        # -------------------------------------------------
-                        # Display common possible response fields
-                        # -------------------------------------------------
-
-                        prediction = (
-                            result.get("prediction")
-                            or result.get("class")
-                            or result.get("predicted_class")
-                            or result.get("damage_type")
-                            or result.get("label")
+                    with c1:
+                        st.metric(
+                            "Damage Type",
+                            damage_type.replace("_", " ")
                         )
 
-                        confidence = (
-                            result.get("confidence")
-                            or result.get("prediction_confidence")
+                    with c2:
+                        st.metric(
+                            "Confidence",
+                            f"{float(confidence):.2f}%"
                         )
 
-                        severity = (
-                            result.get("severity")
-                            or result.get("severity_level")
+                    with c3:
+                        st.metric(
+                            "Severity",
+                            severity
                         )
 
-                        # -------------------------------------------------
-                        # Result columns
-                        # -------------------------------------------------
+                    # =================================================
+                    # RECOMMENDATION
+                    # =================================================
 
-                        c1, c2, c3 = st.columns(3)
+                    st.subheader("🛠️ Recommendation")
 
-                        with c1:
-                            st.metric(
-                                "Damage Type",
-                                str(prediction)
-                                if prediction is not None
-                                else "N/A"
-                            )
+                    if severity.lower() == "high":
+                        st.error(
+                            f"⚠️ {recommendation}"
+                        )
 
-                        with c2:
-                            if confidence is not None:
-
-                                try:
-                                    confidence_value = float(confidence)
-
-                                    if confidence_value <= 1:
-                                        confidence_value *= 100
-
-                                    st.metric(
-                                        "Confidence",
-                                        f"{confidence_value:.2f}%"
-                                    )
-
-                                except:
-                                    st.metric(
-                                        "Confidence",
-                                        str(confidence)
-                                    )
-                            else:
-                                st.metric(
-                                    "Confidence",
-                                    "N/A"
-                                )
-
-                        with c3:
-                            st.metric(
-                                "Severity",
-                                str(severity)
-                                if severity is not None
-                                else "N/A"
-                            )
-
-                        # -------------------------------------------------
-                        # Full API Response
-                        # -------------------------------------------------
-
-                        st.markdown("### 🔎 Complete API Response")
-
-                        st.json(result)
+                    elif severity.lower() == "medium":
+                        st.warning(
+                            f"⚠️ {recommendation}"
+                        )
 
                     else:
-
-                        st.error(
-                            f"❌ Backend returned HTTP {response.status_code}"
+                        st.info(
+                            f"ℹ️ {recommendation}"
                         )
 
-                        st.code(response.text)
+                    # =================================================
+                    # PROBABILITIES
+                    # =================================================
 
-                except requests.exceptions.Timeout:
+                    st.subheader("📈 Class Probabilities")
+
+                    for class_name, probability in probabilities.items():
+
+                        st.write(
+                            f"**{class_name.replace('_', ' ')}:** "
+                            f"{float(probability):.2f}%"
+                        )
+
+                        st.progress(
+                            min(float(probability) / 100, 1.0)
+                        )
+
+                    # =================================================
+                    # COMPLETE RESPONSE
+                    # =================================================
+
+                    with st.expander("🔎 View Complete API Response"):
+                        st.json(result)
+
+                # =================================================
+                # API ERROR
+                # =================================================
+
+                else:
 
                     st.error(
-                        "⏱️ Backend request timed out. "
-                        "Railway may be waking up or processing the model."
+                        f"❌ Backend Error: HTTP {response.status_code}"
                     )
 
-                except requests.exceptions.ConnectionError:
+                    st.code(response.text)
 
-                    st.error(
-                        "❌ Could not connect to the Railway backend."
-                    )
+            # =====================================================
+            # CONNECTION ERROR
+            # =====================================================
 
-                    st.info(
-                        "Check that the Railway backend is running and "
-                        "the public URL is correct."
-                    )
+            except requests.exceptions.ConnectionError:
 
-                except Exception as e:
+                st.error(
+                    "❌ Could not connect to the Railway backend."
+                )
 
-                    st.error(
-                        f"❌ An unexpected error occurred: {str(e)}"
-                    )
+                st.info(
+                    "Please check that the Railway service is running."
+                )
+
+            # =====================================================
+            # TIMEOUT ERROR
+            # =====================================================
+
+            except requests.exceptions.Timeout:
+
+                st.error(
+                    "⏱️ Request timed out. "
+                    "The Railway backend may be waking up."
+                )
+
+            # =====================================================
+            # OTHER ERROR
+            # =====================================================
+
+            except Exception as e:
+
+                st.error(
+                    f"❌ Unexpected error: {str(e)}"
+                )
 
 else:
 
     st.info(
-        "👆 Please upload a road image to start detection."
+        "👆 Upload a road image above to start detection."
     )
 
 # ============================================================
@@ -299,13 +299,11 @@ else:
 
 st.divider()
 
-st.markdown(
-    """
-    <div style="text-align:center;">
-        <p>AI-Based Smart Road Damage Detection & Severity Assessment System</p>
-        <p>Powered by TensorFlow • EfficientNetB0 • FastAPI • Streamlit</p>
-    </div>
-    """,
-    unsafe_allow_html=True
+st.caption(
+    "AI-Based Smart Road Damage Detection & Severity Assessment System"
+)
+
+st.caption(
+    "EfficientNetB0 • TensorFlow • FastAPI • Railway • Streamlit"
 )
 ```

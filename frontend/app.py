@@ -1,150 +1,48 @@
 import streamlit as st
 import requests
-from PIL import Image
-from io import BytesIO
 
-# Railway FastAPI URL
-API_URL = "https://agile-energy-production-e5d4.up.railway.app/predict"
+# Aapka asli live Railway API link yahan bilkul sahi set hai
+API_URL = "https://railway.app"
 
+st.set_page_config(page_title="AI Road Damage Detection", layout="centered")
 
-# Page configuration
-st.set_page_config(
-    page_title="AI Road Damage Detection",
-    page_icon="🚧",
-    layout="centered"
-)
+st.title("🛣 AI Road Damage Detection System")
+st.write("Upload a road image to detect structural damage and access severity.")
 
-
-# Title
-st.title("🚧 AI Road Damage Detection")
-st.write(
-    "Upload a road image to detect road damage, "
-    "confidence, severity, and recommended action."
-)
-
-
-# Image uploader
-uploaded_file = st.file_uploader(
-    "Upload a road image",
-    type=["jpg", "jpeg", "png"]
-)
-
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-
-    # Display uploaded image
-    image = Image.open(uploaded_file)
-
-    st.image(
-        image,
-        caption="Uploaded Road Image",
-        use_container_width=True
-    )
-
-    # Prediction button
-    if st.button("🔍 Detect Road Damage", use_container_width=True):
-
-        with st.spinner("Analyzing road image..."):
-
+    # FIX: use_column_width ko use_container_width se replace kar diya hai
+    st.image(uploaded_file, caption='Uploaded Image.', use_container_width=True)
+    
+    if st.button("Analyze Road Damage"):
+        with st.spinner("Analyzing image through CNN model... Please wait."):
+            # Image ko binary bytes mein convert karke FastAPI ko bhejna
+            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+            
             try:
-                # Reset file position
-                uploaded_file.seek(0)
-
-                files = {
-                    "file": (
-                        uploaded_file.name,
-                        uploaded_file.getvalue(),
-                        uploaded_file.type
-                    )
-                }
-
-                # Send image to FastAPI
-                response = requests.post(
-                    API_URL,
-                    files=files,
-                    timeout=120
-                )
-
-                # Check response
+                # Railway API ke /predict endpoint par request bhejein
+                response = requests.post(f"{API_URL}predict", files=files)
+                
                 if response.status_code == 200:
-
                     result = response.json()
-
-                    damage_type = result["damage_type"]
-                    confidence = result["confidence"]
-
-                    severity_data = result["severity"]
-
-                    severity = severity_data["severity"]
-                    recommendation = severity_data["recommendation"]
-
-                    # Results
-                    st.success("Prediction completed successfully!")
-
-                    st.subheader("📊 Detection Result")
-
+                    
+                    st.success("Analysis Complete!")
+                    
+                    # Metrics alignment
                     col1, col2 = st.columns(2)
-
                     with col1:
-                        st.metric(
-                            "Damage Type",
-                            damage_type
-                        )
-
+                        st.metric(label="Detected Damage Type", value=result['damage_type'].replace('_', ' '))
                     with col2:
-                        st.metric(
-                            "Confidence",
-                            f"{confidence:.2f}%"
-                        )
-
-                    st.subheader("⚠️ Severity")
-
-                    st.info(severity)
-
-                    st.subheader("💡 Recommendation")
-
-                    st.write(recommendation)
-
-                    # Probabilities
-                    st.subheader("📈 Class Probabilities")
-
-                    probabilities = result["probabilities"]
-
-                    for class_name, probability in probabilities.items():
-
-                        st.write(
-                            f"**{class_name.replace('_', ' ')}:** "
-                            f"{probability:.2f}%"
-                        )
-
-                        st.progress(
-                            min(int(probability), 100)
-                        )
-
+                        st.metric(label="Severity Level", value=result['severity'])
+                        
+                    st.metric(label="Model Confidence", value=f"{result['confidence']}%")
+                    
+                    # Probabilities bar chart dikhane ke liye
+                    st.write("### 📊 Prediction Probabilities across all classes:")
+                    st.bar_chart(result['probabilities'])
                 else:
-
-                    st.error(
-                        f"API Error: {response.status_code}"
-                    )
-
-                    st.write(response.text)
-
-            except requests.exceptions.Timeout:
-
-                st.error(
-                    "The API took too long to respond. "
-                    "Please try again."
-                )
-
-            except requests.exceptions.ConnectionError:
-
-                st.error(
-                    "Could not connect to the Railway API."
-                )
-
+                    st.error(f"Backend Server Error ({response.status_code}): {response.text}")
+                    
             except Exception as e:
-
-                st.error(
-                    f"Something went wrong: {str(e)}"
-                )
-
+                st.error(f"Could not connect to FastAPI server at Railway. Error details: {str(e)}")

@@ -43,7 +43,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(**file**))
 
 # =====================================================
 
-# LOAD MODEL
+# FILE PATHS
 
 # =====================================================
 
@@ -52,12 +52,29 @@ BASE_DIR,
 "road_damage_model.keras"
 )
 
-print("Loading model...")
+CLASS_LABELS_PATH = os.path.join(
+BASE_DIR,
+"class_labels.json"
+)
 
-model = tf.keras.models.load_model(MODEL_PATH)
+SEVERITY_PATH = os.path.join(
+BASE_DIR,
+"severity_mapping.json"
+)
+
+# =====================================================
+
+# LOAD MODEL
+
+# =====================================================
+
+print("Loading road damage model...")
+
+model = tf.keras.models.load_model(
+MODEL_PATH
+)
 
 print("Model loaded successfully!")
-print("Model:", model.name)
 
 # =====================================================
 
@@ -65,30 +82,34 @@ print("Model:", model.name)
 
 # =====================================================
 
-CLASS_LABELS_PATH = os.path.join(
-BASE_DIR,
-"class_labels.json"
-)
+with open(
+CLASS_LABELS_PATH,
+"r"
+) as f:
 
-with open(CLASS_LABELS_PATH, "r") as f:
+```
 class_labels = json.load(f)
+```
 
 # Convert list format to dictionary
 
 if isinstance(class_labels, list):
+
+```
 class_labels = {
-i: name
-for i, name in enumerate(class_labels)
+    i: name
+    for i, name in enumerate(class_labels)
+}
+```
+
+# Convert JSON keys to integers
+
+class_labels = {
+int(key): value
+for key, value in class_labels.items()
 }
 
-# Convert JSON string keys to integer keys
-
-class_labels = {
-int(k): v
-for k, v in class_labels.items()
-}
-
-print("Classes:")
+print("Class labels:")
 print(class_labels)
 
 # =====================================================
@@ -97,15 +118,24 @@ print(class_labels)
 
 # =====================================================
 
-SEVERITY_PATH = os.path.join(
-BASE_DIR,
-"severity_mapping.json"
-)
+with open(
+SEVERITY_PATH,
+"r"
+) as f:
 
-with open(SEVERITY_PATH, "r") as f:
+```
 severity_mapping = json.load(f)
+```
 
 print("Severity mapping loaded successfully!")
+
+# =====================================================
+
+# IMAGE SETTINGS
+
+# =====================================================
+
+IMG_SIZE = 224
 
 # =====================================================
 
@@ -113,26 +143,29 @@ print("Severity mapping loaded successfully!")
 
 # =====================================================
 
-IMG_SIZE = 224
-
 def preprocess_image(image):
 
 ```
+# Convert image to RGB
 image = image.convert("RGB")
 
+# Resize image
 image = image.resize(
     (IMG_SIZE, IMG_SIZE)
 )
 
+# Convert to NumPy array
 image = np.array(
     image,
     dtype=np.float32
 )
 
+# EfficientNet preprocessing
 image = tf.keras.applications.efficientnet.preprocess_input(
     image
 )
 
+# Add batch dimension
 image = np.expand_dims(
     image,
     axis=0
@@ -143,7 +176,7 @@ return image
 
 # =====================================================
 
-# ROOT API
+# ROOT ENDPOINT
 
 # =====================================================
 
@@ -159,7 +192,7 @@ return {
 
 # =====================================================
 
-# HEALTH CHECK
+# HEALTH ENDPOINT
 
 # =====================================================
 
@@ -169,13 +202,13 @@ def health():
 ```
 return {
     "status": "healthy",
-    "model_loaded": model is not None
+    "model_loaded": True
 }
 ```
 
 # =====================================================
 
-# PREDICTION API
+# PREDICTION ENDPOINT
 
 # =====================================================
 
@@ -185,63 +218,103 @@ file: UploadFile = File(...)
 ):
 
 ```
+# -------------------------------------------------
 # Read uploaded image
+# -------------------------------------------------
+
 contents = await file.read()
 
 image = Image.open(
     io.BytesIO(contents)
 )
 
+
+# -------------------------------------------------
 # Preprocess image
+# -------------------------------------------------
+
 processed_image = preprocess_image(
     image
 )
 
+
+# -------------------------------------------------
 # Model prediction
+# -------------------------------------------------
+
 prediction = model.predict(
     processed_image,
     verbose=0
 )
 
-# Predicted class
+
+# -------------------------------------------------
+# Get predicted class
+# -------------------------------------------------
+
 predicted_index = int(
     np.argmax(prediction[0])
 )
 
-# Confidence
+
+# -------------------------------------------------
+# Get confidence
+# -------------------------------------------------
+
 confidence = float(
     np.max(prediction[0])
 )
 
-# Damage type
+
+# -------------------------------------------------
+# Get damage type
+# -------------------------------------------------
+
 damage_type = class_labels[
     predicted_index
 ]
 
-# Severity
+
+# -------------------------------------------------
+# Get severity
+# -------------------------------------------------
+
 severity = severity_mapping.get(
     damage_type,
     "Unknown"
 )
 
+
+# -------------------------------------------------
 # Class probabilities
+# -------------------------------------------------
+
 probabilities = {}
 
-for i, name in class_labels.items():
+for index, name in class_labels.items():
 
     probabilities[name] = round(
-        float(prediction[0][i]) * 100,
+        float(prediction[0][index]) * 100,
         2
     )
 
-# Final response
+
+# -------------------------------------------------
+# Return result
+# -------------------------------------------------
+
 return {
+
     "damage_type": damage_type,
+
     "severity": severity,
+
     "confidence": round(
         confidence * 100,
         2
     ),
+
     "probabilities": probabilities
+
 }
 ```

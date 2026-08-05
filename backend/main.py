@@ -1,410 +1,333 @@
-import os
-import json
-import numpy as np
-from PIL import Image
-from io import BytesIO
-
-import tensorflow as tf
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+import tensorflow as tf
+import numpy as np
+import json
+import io
+import os
 
+# =====================================================
 
-# ============================================================
-# APP
-# ============================================================
+# APP INITIALIZATION
+
+# =====================================================
 
 app = FastAPI(
-    title="AI Road Damage Detection API",
-    description="CNN based road damage detection and severity assessment API",
-    version="1.0.0"
+title="AI Road Damage Detection API",
+description="CNN Based Road Damage Detection and Severity Assessment",
+version="1.0"
 )
 
+# =====================================================
 
-# ============================================================
 # CORS
-# ============================================================
+
+# =====================================================
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+CORSMiddleware,
+allow_origins=["*"],
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
 )
 
+# =====================================================
 
-# ============================================================
 # BASE DIRECTORY
-# ============================================================
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# =====================================================
 
+BASE_DIR = os.path.dirname(os.path.abspath(**file**))
 
-# ============================================================
-# FILE PATHS
-# ============================================================
+MODEL_PATH = os.path.join(
+BASE_DIR,
+"road_damage_model.keras"
+)
 
-MODEL_PATH = os.path.join(BASE_DIR, "road_damage_model.keras")
-CLASS_LABELS_PATH = os.path.join(BASE_DIR, "class_labels.json")
-SEVERITY_MAPPING_PATH = os.path.join(BASE_DIR, "severity_mapping.json")
+CLASS_LABELS_PATH = os.path.join(
+BASE_DIR,
+"class_labels.json"
+)
 
+SEVERITY_MAPPING_PATH = os.path.join(
+BASE_DIR,
+"severity_mapping.json"
+)
 
-# ============================================================
+# =====================================================
+
 # CHECK REQUIRED FILES
-# ============================================================
+
+# =====================================================
+
+print("========================================")
+print("AI Road Damage Detection API")
+print("========================================")
+
+print("Backend directory:", BASE_DIR)
+print("Model path:", MODEL_PATH)
 
 if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(
-        f"Model file not found: {MODEL_PATH}"
-    )
+raise FileNotFoundError(
+f"Model file not found: {MODEL_PATH}"
+)
 
 if not os.path.exists(CLASS_LABELS_PATH):
-    raise FileNotFoundError(
-        f"class_labels.json not found: {CLASS_LABELS_PATH}"
-    )
+raise FileNotFoundError(
+f"class_labels.json not found: {CLASS_LABELS_PATH}"
+)
 
 if not os.path.exists(SEVERITY_MAPPING_PATH):
-    raise FileNotFoundError(
-        f"severity_mapping.json not found: {SEVERITY_MAPPING_PATH}"
-    )
+raise FileNotFoundError(
+f"severity_mapping.json not found: {SEVERITY_MAPPING_PATH}"
+)
 
+# =====================================================
 
-# ============================================================
-# LOAD CLASS LABELS
-# ============================================================
-
-with open(CLASS_LABELS_PATH, "r", encoding="utf-8") as f:
-    class_labels = json.load(f)
-
-
-# ============================================================
-# LOAD SEVERITY MAPPING
-# ============================================================
-
-with open(SEVERITY_MAPPING_PATH, "r", encoding="utf-8") as f:
-    severity_mapping = json.load(f)
-
-
-# ============================================================
-# NORMALIZE CLASS LABELS
-# ============================================================
-
-if isinstance(class_labels, dict):
-    # Example:
-    # {"0": "Longitudinal_Crack", "1": "Transverse_Crack"}
-    CLASS_NAMES = {
-        int(k): str(v)
-        for k, v in class_labels.items()
-    }
-
-elif isinstance(class_labels, list):
-    # Example:
-    # ["Longitudinal_Crack", "Transverse_Crack", ...]
-    CLASS_NAMES = {
-        i: str(name)
-        for i, name in enumerate(class_labels)
-    }
-
-else:
-    raise ValueError(
-        "class_labels.json must contain either a list or dictionary."
-    )
-
-
-# ============================================================
 # LOAD MODEL
-# ============================================================
+
+# =====================================================
 
 print("Loading road damage model...")
 
 model = tf.keras.models.load_model(
-    MODEL_PATH,
-    compile=False
+MODEL_PATH,
+compile=False
 )
 
-print("Road damage model loaded successfully.")
+print("Model loaded successfully!")
+print("Model:", model.name)
 
+# =====================================================
 
-# ============================================================
-# MODEL INPUT SIZE
-# ============================================================
+# LOAD CLASS LABELS
 
-try:
-    input_shape = model.input_shape
+# =====================================================
 
-    if isinstance(input_shape, list):
-        input_shape = input_shape[0]
+with open(
+CLASS_LABELS_PATH,
+"r",
+encoding="utf-8"
+) as f:
+class_labels = json.load(f)
 
-    if len(input_shape) >= 3:
-        MODEL_HEIGHT = int(input_shape[1])
-        MODEL_WIDTH = int(input_shape[2])
-    else:
-        MODEL_HEIGHT = 224
-        MODEL_WIDTH = 224
+# Convert list format to dictionary
 
-except Exception:
-    MODEL_HEIGHT = 224
-    MODEL_WIDTH = 224
+if isinstance(class_labels, list):
 
+```
+class_labels = {
+    i: name
+    for i, name in enumerate(class_labels)
+}
+```
 
-# ============================================================
+# Convert JSON string keys to integer keys
+
+elif isinstance(class_labels, dict):
+
+```
+class_labels = {
+    int(key): value
+    for key, value in class_labels.items()
+}
+```
+
+print("Classes:")
+print(class_labels)
+
+# =====================================================
+
+# LOAD SEVERITY MAPPING
+
+# =====================================================
+
+with open(
+SEVERITY_MAPPING_PATH,
+"r",
+encoding="utf-8"
+) as f:
+severity_mapping = json.load(f)
+
+print("Severity mapping loaded successfully!")
+
+# =====================================================
+
 # IMAGE PREPROCESSING
-# ============================================================
 
-def preprocess_image(image_bytes: bytes):
-    try:
-        image = Image.open(BytesIO(image_bytes))
+# =====================================================
 
-        # Convert image to RGB
-        image = image.convert("RGB")
+IMG_SIZE = 224
 
-        # Resize according to model input
-        image = image.resize(
-            (MODEL_WIDTH, MODEL_HEIGHT)
-        )
+def preprocess_image(image):
 
-        # Convert to NumPy
-        image_array = np.array(image, dtype=np.float32)
+```
+# Convert to RGB
+image = image.convert("RGB")
 
-        # Normalize pixel values
-        image_array = image_array / 255.0
+# Resize
+image = image.resize(
+    (IMG_SIZE, IMG_SIZE)
+)
 
-        # Add batch dimension
-        image_array = np.expand_dims(
-            image_array,
-            axis=0
-        )
+# Convert to NumPy array
+image = np.array(
+    image,
+    dtype=np.float32
+)
 
-        return image_array
+# EfficientNet preprocessing
+image = tf.keras.applications.efficientnet.preprocess_input(
+    image
+)
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unable to process image: {str(e)}"
-        )
+# Add batch dimension
+image = np.expand_dims(
+    image,
+    axis=0
+)
 
+return image
+```
 
-# ============================================================
-# GET CLASS NAME
-# ============================================================
+# =====================================================
 
-def get_class_name(class_index: int):
-    return CLASS_NAMES.get(
-        class_index,
-        f"Class_{class_index}"
-    )
+# ROOT API
 
-
-# ============================================================
-# GET SEVERITY
-# ============================================================
-
-def get_severity(class_name: str, class_index: int):
-    """
-    Supports different possible severity_mapping.json formats.
-    """
-
-    # Direct class-name lookup
-    if isinstance(severity_mapping, dict):
-
-        if class_name in severity_mapping:
-            value = severity_mapping[class_name]
-
-            if isinstance(value, dict):
-                return (
-                    value.get("severity")
-                    or value.get("level")
-                    or value.get("name")
-                    or str(value)
-                )
-
-            return str(value)
-
-        # Class index lookup
-        if str(class_index) in severity_mapping:
-            value = severity_mapping[str(class_index)]
-
-            if isinstance(value, dict):
-                return (
-                    value.get("severity")
-                    or value.get("level")
-                    or value.get("name")
-                    or str(value)
-                )
-
-            return str(value)
-
-    return "Unknown"
-
-
-# ============================================================
-# ROOT ENDPOINT
-# ============================================================
+# =====================================================
 
 @app.get("/")
-def root():
-    return {
-        "message": "AI Road Damage Detection API is running",
-        "status": "success",
-        "model": "EfficientNetB0",
-        "classes": list(CLASS_NAMES.values()),
-        "input_size": f"{MODEL_WIDTH}x{MODEL_HEIGHT}"
-    }
+def home():
 
+```
+return {
+    "message": "AI Road Damage Detection API Running",
+    "status": "success",
+    "model_loaded": True
+}
+```
 
-# ============================================================
+# =====================================================
+
 # HEALTH CHECK
-# ============================================================
+
+# =====================================================
 
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy",
-        "model_loaded": model is not None
-    }
 
+```
+return {
+    "status": "healthy",
+    "model_loaded": model is not None
+}
+```
 
-# ============================================================
-# CLASS INFORMATION
-# ============================================================
+# =====================================================
 
-@app.get("/classes")
-def get_classes():
-    return {
-        "classes": CLASS_NAMES
-    }
+# PREDICTION API
 
-
-# ============================================================
-# PREDICTION ENDPOINT
-# ============================================================
+# =====================================================
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+file: UploadFile = File(...)
+):
 
-    # Check file type
-    if not file.content_type:
+```
+# Check file type
+if not file.content_type or not file.content_type.startswith(
+    "image/"
+):
+    raise HTTPException(
+        status_code=400,
+        detail="Please upload a valid image file."
+    )
+
+try:
+
+    # Read uploaded image
+    contents = await file.read()
+
+    if not contents:
         raise HTTPException(
             status_code=400,
-            detail="File type could not be detected."
+            detail="Uploaded file is empty."
         )
 
-    allowed_types = [
-        "image/jpeg",
-        "image/jpg",
-        "image/png",
-        "image/webp"
-    ]
+    # Open image
+    image = Image.open(
+        io.BytesIO(contents)
+    )
 
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail="Please upload a JPG, JPEG, PNG, or WEBP image."
-        )
-
-    # Read image
-    image_bytes = await file.read()
-
-    if not image_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded image is empty."
-        )
-
-    # Preprocess
+    # Preprocess image
     processed_image = preprocess_image(
-        image_bytes
+        image
     )
 
-    # Prediction
-    try:
-        predictions = model.predict(
-            processed_image,
-            verbose=0
-        )
+    # Model prediction
+    prediction = model.predict(
+        processed_image,
+        verbose=0
+    )
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Model prediction failed: {str(e)}"
-        )
-
-    # Convert prediction to NumPy
-    predictions = np.asarray(predictions)
-
-    # Handle normal classification output
-    if predictions.ndim == 2:
-        probabilities = predictions[0]
-
-    elif predictions.ndim == 1:
-        probabilities = predictions
-
-    else:
-        probabilities = predictions.reshape(-1)
-
-    # Find highest probability
+    # Get predicted class
     predicted_index = int(
-        np.argmax(probabilities)
+        np.argmax(prediction[0])
     )
 
+    # Confidence
     confidence = float(
-        probabilities[predicted_index]
+        np.max(prediction[0])
     )
 
-    # Class name
-    predicted_class = get_class_name(
-        predicted_index
+    # Get damage type
+    damage_type = class_labels.get(
+        predicted_index,
+        "Unknown"
     )
 
-    # Severity
-    severity = get_severity(
-        predicted_class,
-        predicted_index
+    # Get severity
+    severity = severity_mapping.get(
+        damage_type,
+        "Unknown"
     )
 
-    # All class probabilities
-    class_probabilities = {}
+    # Calculate probabilities
+    probabilities = {}
 
-    for index, probability in enumerate(probabilities):
+    for i, name in class_labels.items():
 
-        class_name = get_class_name(index)
+        if i < len(prediction[0]):
 
-        class_probabilities[class_name] = round(
-            float(probability) * 100,
-            2
-        )
+            probabilities[name] = round(
+                float(prediction[0][i]) * 100,
+                2
+            )
 
-    # Response
     return {
-        "success": True,
-        "filename": file.filename,
-        "predicted_class": predicted_class,
-        "class_index": predicted_index,
+
+        "damage_type": damage_type,
+
+        "severity": severity,
+
         "confidence": round(
             confidence * 100,
             2
         ),
-        "severity": severity,
-        "class_probabilities": class_probabilities
+
+        "probabilities": probabilities
     }
 
+except HTTPException:
+    raise
 
-# ============================================================
-# RUN LOCALLY
-# ============================================================
+except Exception as e:
 
-if __name__ == "__main__":
-    import uvicorn
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            8000
-        )
+    raise HTTPException(
+        status_code=500,
+        detail=f"Prediction failed: {str(e)}"
     )
-
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port
-    )
+```
